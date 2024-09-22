@@ -5,7 +5,7 @@ from sklearn.metrics import mean_absolute_error
 from sklearn.ensemble import RandomForestRegressor
 
 # Path to your CSV file
-file_path = '/Users/srihaanseelam/Downloads/Global Bleaching Data.csv'
+file_path = ''
 
 # Load the CSV data into a pandas DataFrame
 data = pd.read_csv(file_path)
