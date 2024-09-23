@@ -1,8 +1,10 @@
 # Coral Bleaching Predictor
 
-To use this repository, begin with cloning all code files. Preliminarily run the file "Dataset Download.py", which will download the datasets used in the SST Predictor and Bleaching Predictor. The code will also print two lines, the first being the URL for the SST Data, and the second being the URL for the Bleaching Data. 
+The code in this repository allows the user to train two machine learning models, one of which can predict the future sea surface temperature (sst) in a coral reef, and the second which can predict the percentage of bleaching in the reef given that sst and other constant conditions.
 
-Place the URL for the SST Data in the labeled line within the "LSTM SST Predictor.py" file, and place the URL for the Bleaching Data in the labeled line within the "Simple Global Bleaching Predictor.py" file. Now, both code files can be run. 
+To use this repository, begin with cloning all code files. Preliminarily run the file "Dataset Download.py", which will download the datasets used in the SST Predictor and Bleaching Predictor. The code will also print two lines, the first being the file path for the SST Data, and the second being the file path for the Bleaching Data. 
+
+Place the file path for the SST Data in the labeled line within the "LSTM SST Predictor.py" file, and place the file path for the Bleaching Data in the labeled line within the "Simple Global Bleaching Predictor.py" file. Now, both code files can be run. 
 
 The "LSTM SST Predictor.py" utilizes time-series sea surface temperature data with a resultion of 1 degree from NOAA's COBE-SST 2 Dataset, and is trained to predict 12 months of Sea Surface Temperature values based on 6 months of input (The input length and output length can be adjusted in the LSTM code). 
 
