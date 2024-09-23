@@ -22,7 +22,7 @@ print(f"Downloaded SST Data to: {file_path}")
 
 # Get URL, File Name for Bleaching Dataset Data
 url = "https://datadocs.bco-dmo.org/file/B11vA82u7y2Owp/global_bleaching_environmental.csv"
-filename = "Bleaching_Dataset.nc"
+filename = "Bleaching_Dataset.csv"
 
 # Write file
 with urlopen(url, context=context) as response, open(filename, 'wb') as out_file:
