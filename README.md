@@ -1,6 +1,6 @@
 # Coral Bleaching Predictor
 
-The code in this repository allows the user to train two machine learning models, one of which can predict the future sea surface temperature (sst) in a coral reef, and the second which can predict the percentage of bleaching in the reef given that sst and other constant conditions.
+The code in this repository allows the user to train two machine learning models, one of which can predict the future sea surface temperature (SST) in a coral reef, and the second on which can predict the percentage of bleaching in the reef given that SST and other constant conditions.
 
 To use this repository, begin with cloning all code files. Preliminarily run the file "Dataset Download.py", which will download the datasets used in the SST Predictor and Bleaching Predictor. The code will also print two lines, the first being the file path for the SST Data, and the second being the file path for the Bleaching Data. 
 
