@@ -2,7 +2,8 @@ import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import mean_absolute_error
-from sklearn.ensemble import RandomForestRegressor
+from sklearn.ensemble import ExtraTreesRegressor
+
 
 # Path to your CSV file
 file_path = ''
@@ -16,15 +17,16 @@ print(data.head())
 # Convert necessary columns to numerical values
 data['Distance_to_Shore'] = pd.to_numeric(data['Distance_to_Shore'], errors='coerce')
 data['Depth_m'] = pd.to_numeric(data['Depth_m'], errors='coerce')
-data['ClimSST'] = pd.to_numeric(data['ClimSST'], errors='coerce')
 data['Percent_Bleaching'] = pd.to_numeric(data['Percent_Bleaching'], errors='coerce')
 data['Latitude_Degrees'] = pd.to_numeric(data['Latitude_Degrees'], errors='coerce')
 data['Longitude_Degrees'] = pd.to_numeric(data['Longitude_Degrees'], errors='coerce')
+data['Temperature_Mean'] = pd.to_numeric(data['Temperature_Mean'], errors='coerce')
+data['SSTA'] = pd.to_numeric(data['SSTA'], errors='coerce')
 
 # Remove rows with missing values
-data = data.dropna(subset=['Distance_to_Shore', 'Depth_m', 'ClimSST', 'Percent_Bleaching', 'Latitude_Degrees', 'Longitude_Degrees'])
+data = data.dropna(subset=['Depth_m', 'Percent_Bleaching', 'Latitude_Degrees', 'Temperature_Mean', 'SSTA'])
 
-X = data[['Distance_to_Shore', 'Depth_m', 'ClimSST', 'Latitude_Degrees', 'Longitude_Degrees']]
+X = data[['Depth_m', 'Latitude_Degrees', 'SSTA', 'Temperature_Mean']]
 y = data['Percent_Bleaching']
 
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.1, random_state=42)
@@ -34,12 +36,9 @@ scaler = StandardScaler()
 X_train_scaled = scaler.fit_transform(X_train)
 X_test_scaled = scaler.transform(X_test)
 
-model = RandomForestRegressor(n_estimators=100,random_state=42)
+model = ExtraTreesRegressor(n_estimators=100, random_state=42)
 
 model.fit(X_train_scaled, y_train)
 y_pred_test = model.predict(X_test_scaled)
-
 mae = mean_absolute_error(y_test, y_pred_test)
 print(mae)
-
-
