@@ -104,11 +104,11 @@ input_size = X_train.shape[2]
 output_size = num_predicted
 
 # Set Hyperparameters
-hidden_size = 50
-num_layers = 1
-batch_size = 1
-learning_rate = 0.01
-num_epochs = 50
+hidden_size = 8
+num_layers = 4
+batch_size = 4
+learning_rate = 0.001
+num_epochs = 500
 
 # Class for the LSTM Model
 class LSTMModel(nn.Module):
