@@ -3,7 +3,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import mean_absolute_error
 from sklearn.ensemble import ExtraTreesRegressor
-
+import joblib
 
 # Path to your CSV file
 file_path = ''
@@ -24,21 +24,26 @@ data['Temperature_Mean'] = pd.to_numeric(data['Temperature_Mean'], errors='coerc
 data['SSTA'] = pd.to_numeric(data['SSTA'], errors='coerce')
 
 # Remove rows with missing values
-data = data.dropna(subset=['Depth_m', 'Percent_Bleaching', 'Latitude_Degrees', 'Temperature_Mean', 'SSTA'])
+data = data.dropna(subset=['Longitude_Degrees', 'Latitude_Degrees', 'Temperature_Mean', 'Percent_Bleaching'])
 
-X = data[['Depth_m', 'Latitude_Degrees', 'SSTA', 'Temperature_Mean']]
+X = data[['Longitude_Degrees', 'Latitude_Degrees', 'Temperature_Mean']]
 y = data['Percent_Bleaching']
-
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.1, random_state=42)
-
 
 scaler = StandardScaler()
 X_train_scaled = scaler.fit_transform(X_train)
 X_test_scaled = scaler.transform(X_test)
 
-model = ExtraTreesRegressor(n_estimators=100, random_state=42)
+# Save the scaler for later use
+joblib.dump(scaler, 'scaler_bleaching.pkl')
 
+model = ExtraTreesRegressor(n_estimators=100, random_state=42)
 model.fit(X_train_scaled, y_train)
+
 y_pred_test = model.predict(X_test_scaled)
 mae = mean_absolute_error(y_test, y_pred_test)
 print(mae)
+
+# Save the trained model
+joblib.dump(model, 'extratrees_bleaching_model.pkl')
+print("Model saved as 'extratrees_bleaching_model.pkl'")
