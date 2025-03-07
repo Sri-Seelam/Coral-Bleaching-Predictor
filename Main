@@ -1,443 +1,193 @@
-from scipy.interpolate import griddata
-import joblib
-import pandas as pd
-import geopandas as gpd
-from datetime import datetime, timedelta
-import torch
-import matplotlib.pyplot as plt
-import torch.nn as nn
-import multiprocessing as mp
 import xarray as xr
-from urllib.request import urlretrieve
-import ssl
+import requests
 import numpy as np
-import os
-import statistics
+import torch
+import torch.nn as nn
+import joblib
+import random
+import matplotlib.pyplot as plt
+import geopandas as gpd
+from scipy.interpolate import griddata
+import calendar
+from datetime import datetime, timedelta
 
-# Disable SSL certificate verification for downloading data
-ssl._create_default_https_context = ssl._create_stdlib_context
+# Disable SSL verification warnings
+import urllib3
 
-# Global variable to store the previous value
-previous_value = None
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
+# ✅ Load trained scalers & models
+scaler_sst = joblib.load("scaler_fr_fr.pkl")
+scaler_bleaching = joblib.load("scaler_bleaching.pkl")
+bleaching_model = joblib.load("extratrees_bleaching_model.pkl")
 
-# Disable SSL certificate verification for downloading data
-ssl._create_default_https_context = ssl._create_stdlib_context
-
-# Global variable to store the previous value
-previous_value = 27  # Initialize previous_value
-
-def getSST(day, path, latitudes, longitudes):
-    global previous_value
-    filename = path.split("/")[-1]
-
-    try:
-        # Download the NetCDF file
-        urlretrieve(path, filename)
-        nc_file_path = os.path.abspath(filename)
-
-        # Load the NetCDF file using xarray
-        dataset = xr.open_dataset(nc_file_path)
+import calendar
 
 
-        prevSST = 27  # Initialize a placeholder SST value
-        sst_data = []
-        # Loop over each day (168 days in total)
-        for day in range(0, 1):
-            for lat, lon in zip(latitudes, longitudes):
-                try:
-                    # Check if lat/lon are within bounds
-                    if lat < dataset['lat'].min().values or lat > dataset['lat'].max().values or \
-                            lon < dataset['lon'].min().values or lon > dataset['lon'].max().values:
-                        print(f"Lat: {lat}, Lon: {lon} is out of dataset bounds.")
-                        sst = prevSST  # Use previous SST if out of bounds
-                    else:
-                        # Retrieve SST value for the given lat/lon and handle NaN values
-                        sst = dataset['analysed_sst'].sel(lat=lat, lon=lon, method='nearest').values[day]
+def generate_month_year_labels(start_year=2024, start_month=3):
+    """Generate a list of month-year labels for 12 months starting from a given month and year."""
+    month_year_labels = []
+    current_year = start_year
+    current_month = start_month
 
-                    if np.isnan(sst):  # Check if the value is NaN
-                        #print(f"NaN value for lat: {lat}, lon: {lon}, day: {day}. Using previous SST value: {prevSST}")
-                        sst = prevSST
-                    else:
-                        prevSST = sst  # Update prevSST if the value is valid
+    for _ in range(12):
+        month_year_labels.append(f"{calendar.month_name[current_month]} {current_year}")
 
-                except Exception as e:
-                    print(f"Error retrieving data for lat: {lat}, lon: {lon}, day: {day}: {e}")
-                    sst = prevSST  # Use previous SST if an error occurs
-                sst += 273.25
-                sst_data.append([lat, lon, sst])  # Append SST to the list for lat/lon
+        # Move to next month, update year if needed
+        current_month += 1
+        if current_month > 12:
+            current_month = 1  # Reset to January
+            current_year += 1  # Increment year
 
-        return sst_data
-
-    except Exception as e:
-        print(f"Error occurred: {e}. Using the previous value.")
-        return previous_value
-
-# Function to fetch SST anomaly (SSTA)
-def getSSTA(day, path, latitudes, longitudes):
-    global previous_value
-    filename = path.split("/")[-1]
-
-    try:
-        # Download the NetCDF file
-        urlretrieve(path, filename)
-        nc_file_path = os.path.abspath(filename)
-
-        # Load the NetCDF file using xarray
-        dataset = xr.open_dataset(nc_file_path)
-
-        # Set latitude and longitude to 1, 1
-        lat = 1
-        lon = 1
-        prevSST = 27  # Initialize a placeholder SST value
-        sst_data = []
-        # Loop over each day (168 days in total)
-        for day in range(0, 1):
-            for lat, lon in zip(latitudes, longitudes):
-                try:
-                    # Check if lat/lon are within bounds
-                    if lat < dataset['lat'].min().values or lat > dataset['lat'].max().values or \
-                            lon < dataset['lon'].min().values or lon > dataset['lon'].max().values:
-                        print(f"Lat: {lat}, Lon: {lon} is out of dataset bounds.")
-                        sst = prevSST  # Use previous SST if out of bounds
-                    else:
-                        # Retrieve SST value for the given lat/lon and handle NaN values
-                        sst = dataset['sea_surface_temperature_anomaly'].sel(lat=lat, lon=lon, method='nearest').values[day]
-
-                    if np.isnan(sst):  # Check if the value is NaN
-                        # print(f"NaN value for lat: {lat}, lon: {lon}, day: {day}. Using previous SST value: {prevSST}")
-                        sst = prevSST
-                    else:
-                        prevSST = sst  # Update prevSST if the value is valid
-
-                except Exception as e:
-                    print(f"Error retrieving data for lat: {lat}, lon: {lon}, day: {day}: {e}")
-                    sst = prevSST  # Use previous SST if an error occurs
-
-                sst_data.append([lat, lon, sst])  # Append SST to the list for lat/lon
-
-        return sst_data
-
-    except Exception as e:
-        print(f"Error occurred: {e}. Using the previous value.")
-        return previous_value
+    return month_year_labels
 
 
-# Start date for data retrieval
-start_date = datetime(2024, 3, 9)
+# ✅ Function: Load trained SST model dynamically
+def load_sst_model(model_path):
+    """Load the trained LSTM SST model and extract input size dynamically."""
+    checkpoint = torch.load(model_path, map_location=torch.device("cpu"), weights_only=True)
+    expected_input_size = checkpoint["lstm.weight_ih_l0"].shape[1]
 
+    class SSTLSTMModel(nn.Module):
+        """LSTM model architecture for SST prediction."""
 
-# Function to fetch SST for a given day
-def fetch_sst_for_day(day, lat, lon, latitudes, longitudes):
-    current_date = start_date + timedelta(days=day)
-    sst_data = getSST(day,
-        f"https://www.star.nesdis.noaa.gov/pub/socd/mecb/crw/data/5km/v3.1_op/nc/v1.0/daily/sst/2024/coraltemp_v3.1_{current_date.strftime('%Y%m%d')}.nc",
-        latitudes, longitudes)
-    return sst_data
+        def __init__(self, input_size=expected_input_size, hidden_size=8, num_layers=4, num_predicted=12):
+            super(SSTLSTMModel, self).__init__()
+            self.input_size = input_size
+            self.lstm = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True)
+            self.fc = nn.Linear(hidden_size, input_size * num_predicted)
 
-def fetch_ssta_for_day(day, lat, lon, latitudes, longitudes):
-    current_date = start_date + timedelta(days=day)
-    ssta_data = getSSTA(day,
-        f"https://www.star.nesdis.noaa.gov/pub/socd/mecb/crw/data/5km/v3.1_op/nc/v1.0/daily/ssta/2024/ct5km_ssta_v3.1_{current_date.strftime('%Y%m%d')}.nc",
-        latitudes, longitudes)
-    return ssta_data
+        def forward(self, x):
+            h0 = torch.zeros(4, x.size(0), 8).to(x.device)
+            c0 = torch.zeros(4, x.size(0), 8).to(x.device)
+            out, _ = self.lstm(x, (h0, c0))
+            out = self.fc(out[:, -1, :])
+            return out.view(x.size(0), 12, self.input_size)
 
-def shape_sst(sst):
-    t = []
-
-    # Create the list of lists, each with 28 values
-    sst = [sst[i:i + 28] for i in range(0, 168, 28)]
-
-    for i in sst:
-        t.append(statistics.mean(i))
-    sst = t
-    return sst
-
-def shape_ssta(ssta):
-    # Create the list of lists, each with 28 values
-    ssta = [ssta[i:i + 7] for i in range(0, 168, 7)]
-    tMax = 0
-    fSSTA = []
-    for i in ssta:
-        for m in i:
-            tMax = max(tMax, m)
-        fSSTA.append(tMax)
-        tMax = 0
-    return fSSTA
-
-def master(lat, lon):
-    # Create a pool of workers
-    pool = mp.Pool(processes=5)  # Adjust number of processes based on system capability
-    # Fetch SST data in parallel using the pool
-    sst_data_list = pool.starmap(fetch_sst_for_day, [(day, lat, lon) for day in range(168)])
-
-    # Fetch SST anomaly data in parallel using the pool
-    ssta_data_list = pool.starmap(fetch_ssta_for_day, [(day, lat, lon) for day in range(168)])
-
-    # Close the pool and wait for all tasks to finish
-    pool.close()
-    pool.join()
-
-    #sst, ssta = shape_sst_ssta(sst_data_list, ssta_data_list)
-
-    #return sst, ssta
-
-def create_dummy_sst_data():
-    # Create a flat list of 168 values (6 lists of 28 values each)
-    flat_sst_data = np.random.uniform(low=10.00, high=40.00, size=168)
-    return flat_sst_data
-
-def create_dummy_ssta_data():
-
-    # Create a flat list of 168 values (6 lists of 28 values each)
-    flat_sst_data = np.random.uniform(low=-2.00, high=2.00, size=168)
-
-
-    return flat_sst_data
-
-
-
-def fakeMaster(lat, lon):
-    sst = create_dummy_sst_data()
-    ssta = create_dummy_ssta_data()
-    sst = shape_sst(sst)
-    ssta = shape_ssta(ssta)
-    return sst, ssta
-def prepSSTSSTAForTraining(sst, ssta):
-    # Convert to a NumPy array and reshape
-    sst = np.array(sst).reshape(6, 1)
-    ssta = np.array(ssta).reshape(24, 1)
-    return sst, ssta
-
-class SSTLSTMModel(nn.Module):
-    def __init__(self, input_size, hidden_size, num_layers, num_predicted):
-        super(SSTLSTMModel, self).__init__()
-        self.input_size = input_size
-        self.hidden_size = hidden_size
-        self.num_layers = num_layers
-        self.num_predicted = num_predicted
-        self.lstm = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True)
-        self.fc = nn.Linear(hidden_size, num_predicted)
-
-    def forward(self, x):
-        h0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(x.device)
-        c0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(x.device)
-
-        out, _ = self.lstm(x, (h0, c0))
-        out = self.fc(out[:, -1, :])
-        return out
-
-class SSTALSTMModel(nn.Module):
-    def __init__(self, input_size, hidden_size, num_layers, num_predicted):
-        super(SSTALSTMModel, self).__init__()
-        self.input_size = input_size
-        self.hidden_size = hidden_size
-        self.num_layers = num_layers
-        self.num_predicted = num_predicted
-        self.lstm = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True)
-        self.fc = nn.Linear(hidden_size, input_size * num_predicted)
-
-    # Forward Pass
-    def forward(self, x):
-        h0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(x.device)
-        c0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(x.device)
-
-        out, _ = self.lstm(x, (h0, c0))
-
-        out = self.fc(out[:, -1, :])
-
-        out = out.view(x.size(0), self.num_predicted, self.input_size)
-
-        return out
-
-def SSTPredictions(model_path, sst):
-    input_size = 1
-    hidden_size = 8
-    num_layers = 4
-    num_predicted = 12
-
-    model = SSTLSTMModel(input_size=input_size, hidden_size=hidden_size, num_layers=num_layers, num_predicted=num_predicted)
-
-    model.load_state_dict(torch.load(model_path))
+    model = SSTLSTMModel(input_size=expected_input_size)
+    model.load_state_dict(checkpoint)
     model.eval()
+    return model, expected_input_size
 
-    input_tensor = torch.tensor(sst, dtype=torch.float32).reshape(1, 6, 1)
+
+# ✅ Function: Generate random locations with 0.5° granularity
+def generate_locations(num_pairs):
+    """Generate random latitude/longitude pairs at 0.5° intervals."""
+    lat_range = np.arange(-89.5, 89.5, 0.5)
+    lon_range = np.arange(-180, 180.5, 0.5)
+    locations = random.sample([(lat, lon) for lat in lat_range for lon in lon_range], num_pairs)
+    return locations
+
+
+# ✅ Function: Fetch NOAA SST Data in 30-Day Batches
+def get_real_sst(locations, expected_features):
+    """Retrieve real SST data from NOAA for the last 6 months at multiple locations using 30-day batches."""
+    BATCH_SIZE = 30
+    TOTAL_MONTHS = 6
+    start_date = datetime(2024, 3, 9)
+
+    sst_data = {loc: [[] for _ in range(expected_features)] for loc in locations}
+
+    for month_num in range(1, TOTAL_MONTHS + 1):
+        print(f"\n🔄 Fetching SST for Month {month_num} (30-day batch)")
+        batch_sst = {loc: [] for loc in locations}
+
+        for day_offset in range(BATCH_SIZE):
+            day = start_date + timedelta(days=(BATCH_SIZE * (month_num - 1) + day_offset))
+            date_str = day.strftime('%Y%m%d')
+            sst_url = f"https://www.star.nesdis.noaa.gov/pub/socd/mecb/crw/data/5km/v3.1_op/nc/v1.0/daily/sst/2024/coraltemp_v3.1_{date_str}.nc"
+
+            try:
+                response = requests.get(sst_url, verify=False, stream=True)
+                if response.status_code == 200:
+                    dataset = xr.open_dataset(f"sst_{date_str}.nc")
+                    sst_data_var = dataset['analysed_sst']
+
+                    if np.nanmax(sst_data_var.values) > 200:
+                        sst_data_var = sst_data_var - 273.15
+
+                    for lat, lon in locations:
+                        lon_adj = lon - 360 if lon > 180 else lon
+                        try:
+                            sst = sst_data_var.sel(lat=lat, lon=lon_adj, method='nearest').isel(time=0).values
+                            if np.isnan(sst):
+                                sst = np.nanmean(sst_data_var.values)
+                        except Exception:
+                            sst = np.nanmean(sst_data_var.values)
+
+                        batch_sst[(lat, lon)].append(sst)
+
+            except Exception as e:
+                print(f"❌ Error fetching data for {date_str}: {e}")
+
+        for loc in locations:
+            for feature_idx in range(expected_features):
+                sst_data[loc][feature_idx].append(np.mean(batch_sst[loc]) if batch_sst[loc] else np.nan)
+
+    return {loc: np.vstack(values) for loc, values in sst_data.items()}
+
+
+# ✅ Function: Predict SST for Next 12 Months
+def predict_next_12_months_sst(model, past_sst):
+    """Predict SST for the next 12 months using LSTM model."""
+    past_sst = past_sst.T
+    normalized_sst = scaler_sst.transform(past_sst)
+    input_tensor = torch.tensor(normalized_sst, dtype=torch.float32).reshape(1, 6, -1)
+
     with torch.no_grad():
         predictions = model(input_tensor)
 
-    return predictions.numpy()
-
-def SSTAPredictions(model_path, sst):
-    input_size = 1
-    hidden_size = 8
-    num_layers = 3
-    num_predicted = 48
-
-    model = SSTALSTMModel(input_size=input_size, hidden_size=hidden_size, num_layers=num_layers, num_predicted=num_predicted)
-
-    model.load_state_dict(torch.load(model_path))
-    model.eval()
-
-    input_tensor = torch.tensor(sst, dtype=torch.float32).reshape(1, 24, 1)
-    with torch.no_grad():
-        predictions = model(input_tensor)
-
-    return predictions.numpy()
-
-def getBleaching(sst, ssta, latitude, longitude):
-    sst, ssta = prepSSTSSTAForTraining(sst, ssta)
-
-    future_SST = SSTPredictions("sst_lstm_model.pth", sst)
-    future_SSTA = SSTAPredictions("ssta_lstm_model.pth", ssta)
-    future_SSTA = future_SSTA[0]
-    future_SSTA = future_SSTA.reshape(-1)
-    future_SST = future_SST[0]
-    t = []
-    for i in future_SST:
-        for a in range(4):
-            t.append(a)
-    future_SST = t
-
-    rf_model = joblib.load('random_forest_model.joblib')
-    tData = []
-    preds = []
-    for a in range(len(future_SST)):
-        tData = np.array([[latitude, future_SSTA[a], future_SST[a], longitude]])
-        preds.append(rf_model.predict(tData)[0])
-    return preds
+    predictions = predictions.numpy().reshape(12, -1)
+    sst_predictions = scaler_sst.inverse_transform(predictions)
+    sst_predictions_k = sst_predictions + 273.15
+    return sst_predictions, sst_predictions_k
 
 
+# ✅ Function: Predict Bleaching Risk
+def predict_bleaching_for_all_months(longitude, latitude, sst_k):
+    """Predict coral bleaching probability for each month."""
+    bleaching_predictions = []
+    for month_idx, sst_values in enumerate(sst_k):
+        sst_value = sst_values[0]
+        X_input = np.array([[longitude, latitude, sst_value]])
+        X_scaled = scaler_bleaching.transform(X_input)
+        bleaching_risk = bleaching_model.predict(X_scaled)[0]
+        bleaching_predictions.append(bleaching_risk)
+    return bleaching_predictions
+
+
+def plot_global_maps(locations, bleaching_predictions, start_year=2024, start_month=3):
+    """Plot 12 interpolated global heatmaps of coral bleaching risk (one per month) with month-year labels."""
+    world = gpd.read_file(gpd.datasets.get_path("naturalearth_lowres"))
+    lats, lons = zip(*locations)
+    bleaching_predictions = np.array(bleaching_predictions)
+    grid_lat, grid_lon = np.mgrid[-90:90.5:0.5, -180:180.5:0.5]
+
+    # ✅ Use fixed month-year labels
+    month_year_labels = generate_month_year_labels(start_year, start_month)
+
+    for month in range(12):
+        print(f"📅 Generating heatmap for {month_year_labels[month]}")
+        risks = bleaching_predictions[:, month]
+
+        grid_risk = griddata((lats, lons), risks, (grid_lat, grid_lon), method="cubic", fill_value=np.nanmean(risks))
+
+        fig, ax = plt.subplots(figsize=(12, 6))
+        world.plot(ax=ax, color="lightgray", edgecolor="black")
+        im = ax.imshow(grid_risk, extent=(-180, 180, -90, 90), origin="lower", cmap="YlOrRd", alpha=0.75)
+        cbar = plt.colorbar(im, ax=ax, orientation="vertical", shrink=0.7)
+        cbar.set_label("Predicted Coral Bleaching Probability (%)")
+        ax.set_title(f"Interpolated Coral Bleaching Risk - {month_year_labels[month]}")
+        plt.xlabel("Longitude")
+        plt.ylabel("Latitude")
+        plt.show()
+
+# ✅ MAIN EXECUTION
 if __name__ == "__main__":
-    # Example usage
-    np.random.seed(0)  # For reproducibility
-    lats = np.random.uniform(low=-90, high=90, size=500)  # Latitude range for oceans
-    lons = np.random.uniform(low=-180, high=180, size=500)  # Longitude range for oceans
-
-    t = []
-    tt = ()
-    tss = []
-    ts = 0
-    sst_data = {}
-    for lat, lon in zip(lats, lons):
-        sst_data.update({(lat, lon): []})
-    for i in range(168):
-
-        for a in t:
-            tt = (a[0], a[1])
-            ts = a[2]
-            tss = sst_data.get(tt)
-            tss.append(ts)
-            sst_data.update({tt: tss})
-    print("\n\n\n\n\n")
-    for lat, lon in zip(lats, lons):
-        tt = (lat, lon)
-        tss = sst_data.get(tt)
-        print(tss)
-        tss = shape_sst(tss)
-        sst_data.update({tt: tss})
-
-    t = []
-    tt = ()
-    tss = []
-    ts = 0
-    ssta_data = {}
-    for lat, lon in zip(lats, lons):
-        ssta_data.update({(lat, lon): []})
-    for i in range(168):
-        t = fetch_ssta_for_day(i, 1, 1, lats, lons)
-        for a in t:
-            tt = (a[0], a[1])
-            ts = a[2]
-            tss = ssta_data.get(tt)
-            tss.append(ts)
-            ssta_data.update({tt: tss})
-
-    for lat, lon in zip(lats, lons):
-        tt = (lat, lon)
-        tss = ssta_data.get(tt)
-        tss = shape_ssta(tss)
-        ssta_data.update({tt: tss})
-    print("\n\n\n\n\n")
-    print(sst_data)
-    print(ssta_data)
-
-    # Initialize a list to store SST, SSTA, and corresponding bleaching predictions
-    all_data = []
-
-    # First, load the data for all latitudes and longitudes
-    for lat, lon in zip(lats, lons):
-        # Fetch SST and SSTA data for the given coordinates using the actual master function
-        sst_data1 = sst_data.get((lat, lon))
-        ssta_data1 = ssta_data.get((lat, lon))
-
-        # Store SST and SSTA data for reuse
-        all_data.append({
-            'latitude': lat,
-            'longitude': lon,
-            'sst_data': sst_data1,
-            'ssta_data': ssta_data1
-        })
-
-    # Now loop through each week and generate predictions
-    for week in range(48):  # Assuming 12 weeks of predictions
-        week_predictions = []  # Store predictions for the current week
-
-        for data in all_data:
-            lat = data['latitude']
-            lon = data['longitude']
-            sst_data2 = data['sst_data']
-            ssta_data = data['ssta_data']
-
-            # Use getBleaching for predictions, reuse already fetched SST and SSTA data
-            preds = getBleaching(sst_data2, ssta_data, lat, lon)
-
-            # Store results in the predictions list for the current week
-            week_predictions.append({
-                'latitude': lat,
-                'longitude': lon,
-                'predicted_bleaching': preds[week]  # Assuming preds contains weekly predictions
-            })
-
-        # Create a DataFrame to store all predictions for the current week
-        predictions_df = pd.DataFrame(week_predictions)
-
-        # Define grid for interpolation
-        lat_grid = np.linspace(predictions_df['latitude'].min(), predictions_df['latitude'].max(), 100)
-        lon_grid = np.linspace(predictions_df['longitude'].min(), predictions_df['longitude'].max(), 100)
-        lon_grid, lat_grid = np.meshgrid(lon_grid, lat_grid)
-
-        # Interpolate data
-        grid_z = griddata(
-            (predictions_df['longitude'], predictions_df['latitude']),
-            predictions_df['predicted_bleaching'],
-            (lon_grid, lat_grid),
-            method='linear'
-        )
-
-        # Load world shapefile for country borders
-        world = gpd.read_file(gpd.datasets.get_path('naturalearth_lowres'))
-
-        # Plotting
-        plt.figure(figsize=(12, 8))
-
-        # Plot the country boundaries with grey fill
-        world.plot(ax=plt.gca(), color='lightgrey', edgecolor='k', linewidth=0.5)
-
-        # Plot the interpolated bleaching data with the 'seismic' colormap (blue -> white -> red)
-        plt.imshow(
-            grid_z,
-            extent=(predictions_df['longitude'].min(), predictions_df['longitude'].max(),
-                    predictions_df['latitude'].min(), predictions_df['latitude'].max()),
-            origin='lower',
-            cmap='bwr',  # Color map for blue -> white -> red
-            alpha=0.75
-        )
-
-        plt.colorbar(label='Predicted Bleaching Percentage')
-        plt.title(f'Interpolated Coral Bleaching Percentage Heatmap - Week {week + 1}')
-        plt.xlabel('Longitude')
-        plt.ylabel('Latitude')
-
-        # Save the figure
-        plt.savefig(f'Updated bleaching_heatmap_week_{week + 1}.png', bbox_inches='tight')
-        plt.close()  # Close the plot to free memory
+    model, correct_input_size = load_sst_model("lstm_model_new_fr.pth")
+    locations = generate_locations(600)
+    real_sst_data = get_real_sst(locations, correct_input_size)
+    bleaching_results = [
+        predict_bleaching_for_all_months(lon, lat, predict_next_12_months_sst(model, real_sst_data[(lat, lon)])[1]) for
+        lat, lon in locations]
+    plot_global_maps(locations, np.array(bleaching_results))
