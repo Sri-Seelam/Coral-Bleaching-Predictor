@@ -16,7 +16,7 @@ import urllib3
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# ✅ Load trained scalers & models
+# Load trained scalers & models
 scaler_sst = joblib.load("scaler_fr_fr.pkl")
 scaler_bleaching = joblib.load("scaler_bleaching.pkl")
 bleaching_model = joblib.load("extratrees_bleaching_model.pkl")
@@ -25,7 +25,6 @@ import calendar
 
 
 def generate_month_year_labels(start_year=2024, start_month=3):
-    """Generate a list of month-year labels for 12 months starting from a given month and year."""
     month_year_labels = []
     current_year = start_year
     current_month = start_month
@@ -42,14 +41,12 @@ def generate_month_year_labels(start_year=2024, start_month=3):
     return month_year_labels
 
 
-# ✅ Function: Load trained SST model dynamically
+# Load trained SST model dynamically
 def load_sst_model(model_path):
-    """Load the trained LSTM SST model and extract input size dynamically."""
     checkpoint = torch.load(model_path, map_location=torch.device("cpu"), weights_only=True)
     expected_input_size = checkpoint["lstm.weight_ih_l0"].shape[1]
 
     class SSTLSTMModel(nn.Module):
-        """LSTM model architecture for SST prediction."""
 
         def __init__(self, input_size=expected_input_size, hidden_size=8, num_layers=4, num_predicted=12):
             super(SSTLSTMModel, self).__init__()
@@ -70,18 +67,16 @@ def load_sst_model(model_path):
     return model, expected_input_size
 
 
-# ✅ Function: Generate random locations with 0.5° granularity
+# Function: Generate random locations with 0.5° granularity
 def generate_locations(num_pairs):
-    """Generate random latitude/longitude pairs at 0.5° intervals."""
     lat_range = np.arange(-89.5, 89.5, 0.5)
     lon_range = np.arange(-180, 180.5, 0.5)
     locations = random.sample([(lat, lon) for lat in lat_range for lon in lon_range], num_pairs)
     return locations
 
 
-# ✅ Function: Fetch NOAA SST Data in 30-Day Batches
+# Function: Fetch NOAA SST Data in 30-Day Batches
 def get_real_sst(locations, expected_features):
-    """Retrieve real SST data from NOAA for the last 6 months at multiple locations using 30-day batches."""
     BATCH_SIZE = 30
     TOTAL_MONTHS = 6
     start_date = datetime(2024, 3, 9)
@@ -89,7 +84,7 @@ def get_real_sst(locations, expected_features):
     sst_data = {loc: [[] for _ in range(expected_features)] for loc in locations}
 
     for month_num in range(1, TOTAL_MONTHS + 1):
-        print(f"\n🔄 Fetching SST for Month {month_num} (30-day batch)")
+        print(f"\n Fetching SST for Month {month_num} (30-day batch)")
         batch_sst = {loc: [] for loc in locations}
 
         for day_offset in range(BATCH_SIZE):
@@ -118,7 +113,7 @@ def get_real_sst(locations, expected_features):
                         batch_sst[(lat, lon)].append(sst)
 
             except Exception as e:
-                print(f"❌ Error fetching data for {date_str}: {e}")
+                print(f" Error fetching data for {date_str}: {e}")
 
         for loc in locations:
             for feature_idx in range(expected_features):
@@ -127,9 +122,8 @@ def get_real_sst(locations, expected_features):
     return {loc: np.vstack(values) for loc, values in sst_data.items()}
 
 
-# ✅ Function: Predict SST for Next 12 Months
+# Predict SST for Next 12 Months
 def predict_next_12_months_sst(model, past_sst):
-    """Predict SST for the next 12 months using LSTM model."""
     past_sst = past_sst.T
     normalized_sst = scaler_sst.transform(past_sst)
     input_tensor = torch.tensor(normalized_sst, dtype=torch.float32).reshape(1, 6, -1)
@@ -143,9 +137,8 @@ def predict_next_12_months_sst(model, past_sst):
     return sst_predictions, sst_predictions_k
 
 
-# ✅ Function: Predict Bleaching Risk
+# Predict Bleaching Risk
 def predict_bleaching_for_all_months(longitude, latitude, sst_k):
-    """Predict coral bleaching probability for each month."""
     bleaching_predictions = []
     for month_idx, sst_values in enumerate(sst_k):
         sst_value = sst_values[0]
@@ -157,17 +150,16 @@ def predict_bleaching_for_all_months(longitude, latitude, sst_k):
 
 
 def plot_global_maps(locations, bleaching_predictions, start_year=2024, start_month=3):
-    """Plot 12 interpolated global heatmaps of coral bleaching risk (one per month) with month-year labels."""
     world = gpd.read_file(gpd.datasets.get_path("naturalearth_lowres"))
     lats, lons = zip(*locations)
     bleaching_predictions = np.array(bleaching_predictions)
     grid_lat, grid_lon = np.mgrid[-90:90.5:0.5, -180:180.5:0.5]
 
-    # ✅ Use fixed month-year labels
+    # Use fixed month-year labels
     month_year_labels = generate_month_year_labels(start_year, start_month)
 
     for month in range(12):
-        print(f"📅 Generating heatmap for {month_year_labels[month]}")
+        print(f" Generating heatmap for {month_year_labels[month]}")
         risks = bleaching_predictions[:, month]
 
         grid_risk = griddata((lats, lons), risks, (grid_lat, grid_lon), method="cubic", fill_value=np.nanmean(risks))
@@ -182,7 +174,7 @@ def plot_global_maps(locations, bleaching_predictions, start_year=2024, start_mo
         plt.ylabel("Latitude")
         plt.show()
 
-# ✅ MAIN EXECUTION
+# MAIN EXECUTION
 if __name__ == "__main__":
     model, correct_input_size = load_sst_model("lstm_model_new_fr.pth")
     locations = generate_locations(600)
