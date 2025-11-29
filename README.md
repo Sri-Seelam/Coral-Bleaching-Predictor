@@ -9,3 +9,5 @@ Place the file path for the SST Data in the labeled line within the "LSTM SST Pr
 The "LSTM SST Predictor.py" utilizes time-series sea surface temperature data with a resolution of 1 degree from NOAA's COBE-SST 2 Dataset and is trained to predict 12 months of Sea Surface Temperature values based on 6 months of input (The input length and output length can be adjusted in the LSTM code). 
 
 The "Simple Global Bleaching Predictor.py" utilizes a BMO-DCO Global Bleaching Dataset to predict the percent of bleaching that will occur in a reef based on the Depth of the reef (meters), Sea-Surface Temperature Average, Latitude (degrees), and Sea-Surface Temperature anomalies in the reef.
+
+The folder "Bleaching Predictions 2025-26" contains the predictions made by this tool in December of 2024 for the following year.
