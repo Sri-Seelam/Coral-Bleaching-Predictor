@@ -105,7 +105,7 @@ class LSTMModel(nn.Module):
 # Initialize Model and Training Parameters
 input_size, hidden_size, num_layers, batch_size, learning_rate, num_epochs = X_train.shape[2], 8, 4, 4, 0.001, 120
 model = LSTMModel(input_size, hidden_size, num_layers, num_predicted)
-criterion = nn.MSELoss()
+criterion = nn.L1Loss()
 optimizer = optim.Adam(model.parameters(), lr=learning_rate)
 train_loader = DataLoader(TensorDataset(X_train, y_train), batch_size=batch_size, shuffle=True)
 test_loader = DataLoader(TensorDataset(X_test, y_test), batch_size=batch_size, shuffle=False)
