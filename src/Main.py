@@ -41,7 +41,7 @@ def generate_month_year_labels(start_year=2024, start_month=3):
     return month_year_labels
 
 
-# Load trained SST model dynamically
+# Load trained SST model
 def load_sst_model(model_path):
     checkpoint = torch.load(model_path, map_location=torch.device("cpu"), weights_only=True)
     expected_input_size = checkpoint["lstm.weight_ih_l0"].shape[1]
